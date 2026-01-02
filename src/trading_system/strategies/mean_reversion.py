@@ -9,7 +9,7 @@ class MeanReversionStrategy(BaseStrategy):
             params (dict, optional): _description_.  bb_length , bb_std , Defaults to None.
         """
         super().__init__("MeanReversion", params)
-        self.bb_length = self.params.get('bb_length', 20)
+        self.bb_length = self.params.get('bb_length', 30)
         self.bb_std = self.params.get('bb_std', 2.0)
 
     def generate_signals(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -22,11 +22,16 @@ class MeanReversionStrategy(BaseStrategy):
         """
         data = self.validate_data(data)
         df = data.copy()
+        # atr 
+        atr_indicator = ta.volatility.AverageTrueRange(df['high'], df['low'], df['close'], window=14)
+        df['ATR_14'] = atr_indicator.average_true_range()
         
         # Bollinger Bands
         bbands = ta.volatility.BollingerBands(df['close'], window=self.bb_length, window_dev=self.bb_std)
         df['BBL'] = bbands.bollinger_lband()
         df['BBU'] = bbands.bollinger_hband()
+        
+        df.dropna(inplace=True)
         
         df['signal'] = 0
         

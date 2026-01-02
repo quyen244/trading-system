@@ -4,15 +4,13 @@ import logging
 from datetime import datetime
 from typing import List, Dict, Tuple, Optional
 from trading_system.risk.manager import RiskManager
-from trading_system.features.engineering import FeatureEngineer
 from trading_system.backtesting.metrics import calculate_metrics
 from trading_system.backtesting.trade import Trade
-from trading_system.data.storage import StorageEngine
 
 logger = logging.getLogger(__name__)
 
 class BacktestEngine:
-    def __init__(self, initial_capital: float = 10000, commission: float = 0.0002, slippage: float = 0.0001):
+    def __init__(self, initial_capital: float = 1000, commission: float = 0.0002, slippage: float = 0.0001):
         """
         Initialize the backtest engine.
         
@@ -24,8 +22,6 @@ class BacktestEngine:
         self.initial_capital = initial_capital
         self.commission = commission
         self.slippage = slippage
-        self.feature_engineer = FeatureEngineer()
-        self.storage = StorageEngine()
 
     def run_backtest(self, strategy, raw_data: pd.DataFrame) -> Tuple[Dict, pd.Series, List[Trade]]:
         """
@@ -33,13 +29,10 @@ class BacktestEngine:
         """
         logger.info(f"Starting backtest for {strategy.name}")
         
-        # 1. Prepare Data
-        data = self.feature_engineer.add_all_features(raw_data)
+        # 1. Generate Signals
+        signaled_data = strategy.generate_signals(raw_data)
         
-        # 2. Generate Signals
-        signaled_data = strategy.generate_signals(data)
-        
-        # 3. Simulate Execution
+        # 2. Simulate Execution
         risk_manager = RiskManager(self.initial_capital)
         current_capital = self.initial_capital
         equity_series = pd.Series(index=signaled_data.index, dtype='float64')
@@ -56,6 +49,7 @@ class BacktestEngine:
             close_price = curr_row['close']
             high_price = curr_row['high']
             low_price = curr_row['low']
+            open_price = curr_row['open']
             atr = curr_row.get('ATR_14', 0)
             signal = prev_row.get('signal', 0)
             
@@ -117,7 +111,7 @@ class BacktestEngine:
             # 3.2 Open New Position (Entry Logic)
             if not active_trade and signal != 0:
                 side = "long" if signal == 1 else "short"
-                entry_price = close_price * (1 + self.slippage) if side == "long" else close_price * (1 - self.slippage)
+                entry_price = open_price  * (1 + self.slippage) if side == "long" else open_price  * (1 - self.slippage)
                 
                 # Risk Rules: 1.5x ATR for SL, 3x ATR for TP
                 sl_dist = 1.5 * atr if atr > 0 else entry_price * 0.02
@@ -136,7 +130,7 @@ class BacktestEngine:
                 
                 if position_size > 0:
                     active_trade = Trade(
-                        symbol=signaled_data.get('symbol', 'UNKNOWN'),
+                        symbol=signaled_data.iloc[0].get('symbol' , 'Unknown'),
                         entry_time=timestamp,
                         entry_price=entry_price,
                         stop_loss=stop_loss,
@@ -164,36 +158,4 @@ class BacktestEngine:
         
         return final_metrics, equity_series, trades
 
-    def save_results(self, strategy_name: str, symbol: str, metrics: Dict, trades: List[Trade], equity_series: pd.Series):
-        """
-        Persist backtest results to database.
-        
-        Args:
-            strategy_name (str): Name of the strategy.
-            symbol (str): Trading symbol.
-            metrics (Dict): Backtest metrics.
-            trades (List[Trade]): List of trades.
-            equity_series (pd.Series): Equity curve.
-        """
-        backtest_data = {
-            "strategy_id": strategy_name,
-            "symbol": symbol,
-            "start_date": equity_series.index[0],
-            "end_date": equity_series.index[-1],
-            "initial_capital": self.initial_capital,
-            "total_return": metrics["total_return"],
-            "cagr": metrics["cagr"],
-            "max_drawdown": metrics["max_drawdown"],
-            "sharpe_ratio": metrics["sharpe_ratio"],
-            "sortino_ratio": metrics["sortino_ratio"],
-            "win_rate_daily": metrics["win_rate_daily"],
-            "num_trades": metrics["num_trades"]
-        }
-        
-        try:
-            bt_id = self.storage.save_backtest(backtest_data, trades)
-            return bt_id
-        except Exception as e:
-            logger.error(f"Failed to save backtest: {e}")
-            return None
-
+# python -m trading_system.backtesting.engine

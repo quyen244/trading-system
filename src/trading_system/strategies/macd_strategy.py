@@ -15,8 +15,8 @@ class MACDStrategy(BaseStrategy):
                 - histogram_threshold: Minimum histogram value for signal (default: 0)
         """
         super().__init__("MACD", params)
-        self.fast_period = self.params.get('fast_period', 12)
-        self.slow_period = self.params.get('slow_period', 26)
+        self.fast_period = self.params.get('fast_period', 5)
+        self.slow_period = self.params.get('slow_period', 30)
         self.signal_period = self.params.get('signal_period', 9)
         self.histogram_threshold = self.params.get('histogram_threshold', 0)
 
@@ -32,6 +32,9 @@ class MACDStrategy(BaseStrategy):
         """
         data = self.validate_data(data)
         df = data.copy()
+
+        atr_indicator = ta.volatility.AverageTrueRange(df['high'], df['low'], df['close'], window=14)
+        df['ATR_14'] = atr_indicator.average_true_range()
         
         # Calculate MACD
         macd_indicator = ta.trend.MACD(
@@ -44,7 +47,7 @@ class MACDStrategy(BaseStrategy):
         df['MACD'] = macd_indicator.macd()
         df['MACD_signal'] = macd_indicator.macd_signal()
         df['MACD_histogram'] = macd_indicator.macd_diff()
-        
+        df.dropna(inplace=True)
         # Initialize signal column
         df['signal'] = 0
         

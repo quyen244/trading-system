@@ -7,11 +7,8 @@ Author: Trading System
 """
 
 import pandas as pd
-import numpy as np
 from typing import List, Dict, Any
 from datetime import datetime
-import logging
-
 from trading_system.backtesting.engine import BacktestEngine
 from trading_system.utils.logger import setup_logger
 
@@ -95,8 +92,7 @@ class StrategyComparator:
                 # Store results
                 result = {
                     'Strategy': name,
-                    **metrics,
-                    'Num_Trades': len(trades)
+                    **metrics
                 }
                 results.append(result)
                 

@@ -14,7 +14,7 @@ import numpy as np
 import ta
 from typing import Optional
 from trading_system.strategies.base_strategy import BaseStrategy
-
+from trading_system.features.engineering import FeatureEngineer
 
 class VolumeProfileStrategy(BaseStrategy):
     """
@@ -40,6 +40,9 @@ class VolumeProfileStrategy(BaseStrategy):
     def generate_signals(self, data: pd.DataFrame) -> pd.DataFrame:
         data = self.validate_data(data)
         df = data.copy()
+
+        atr_indicator = ta.volatility.AverageTrueRange(df['high'], df['low'], df['close'], window=14)
+        df['ATR_14'] = atr_indicator.average_true_range()
         
         # Calculate VWAP
         vwap_indicator = ta.volume.VolumeWeightedAveragePrice(
@@ -107,7 +110,7 @@ class VolumeProfileStrategy(BaseStrategy):
             
             df.loc[df.index[i], 'VAH'] = bins[upper_idx + 1]
             df.loc[df.index[i], 'VAL'] = bins[lower_idx]
-        
+        df.dropna(inplace=True)
         # Generate signals
         df['signal'] = 0
         
@@ -147,7 +150,10 @@ class StatisticalArbitrageStrategy(BaseStrategy):
     def generate_signals(self, data: pd.DataFrame) -> pd.DataFrame:
         data = self.validate_data(data)
         df = data.copy()
-        
+
+        atr_indicator = ta.volatility.AverageTrueRange(df['high'], df['low'], df['close'], window=14)
+        df['ATR_14'] = atr_indicator.average_true_range()
+
         # Calculate rolling mean and std
         df['rolling_mean'] = df['close'].rolling(window=self.window).mean()
         df['rolling_std'] = df['close'].rolling(window=self.window).std()
@@ -212,37 +218,14 @@ class MLMomentumStrategy(BaseStrategy):
         self.lookback = self.params.get('lookback', 20)
         self.prediction_threshold = self.params.get('prediction_threshold', 0.6)
         self.model = None
-    
-    def _create_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Create ML features from price data."""
-        # Momentum features
-        df['returns'] = df['close'].pct_change()
-        df['returns_5'] = df['close'].pct_change(5)
-        df['returns_10'] = df['close'].pct_change(10)
-        
-        # Technical indicators
-        df['RSI'] = ta.momentum.RSIIndicator(df['close'], window=14).rsi()
-        df['MACD'] = ta.trend.MACD(df['close']).macd_diff()
-        df['ATR'] = ta.volatility.AverageTrueRange(df['high'], df['low'], df['close'], window=14).average_true_range()
-        
-        # Volume features
-        df['volume_ratio'] = df['volume'] / df['volume'].rolling(20).mean()
-        
-        # Price position
-        df['price_position'] = (df['close'] - df['close'].rolling(20).min()) / \
-                               (df['close'].rolling(20).max() - df['close'].rolling(20).min())
-        
-        # Volatility
-        df['volatility'] = df['returns'].rolling(20).std()
-        
-        return df
-    
+        self.feature_engineer = FeatureEngineer()
+
     def generate_signals(self, data: pd.DataFrame) -> pd.DataFrame:
         data = self.validate_data(data)
         df = data.copy()
         
         # Create features
-        df = self._create_features(df)
+        df = self.feature_engineer.add_all_features(df)
         
         # Create target (1 if price goes up next period, 0 otherwise)
         df['target'] = (df['close'].shift(-1) > df['close']).astype(int)
@@ -257,8 +240,7 @@ class MLMomentumStrategy(BaseStrategy):
         # Train/test split (use first 70% for training)
         split_idx = int(len(df) * 0.7)
         
-        feature_cols = ['returns', 'returns_5', 'returns_10', 'RSI', 'MACD', 
-                       'ATR', 'volume_ratio', 'price_position', 'volatility']
+        feature_cols = df.columns
         
         X_train = df[feature_cols].iloc[:split_idx]
         y_train = df['target'].iloc[:split_idx]

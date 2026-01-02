@@ -219,8 +219,8 @@ class TradingVisualizer:
         
         # Plot 1: Histogram
         ax1.set_facecolor(self.bg_color)
-        ax1.hist(wins, bins=20, alpha=0.7, color='#00ff88', label='Wins', edgecolor='black')
-        ax1.hist(losses, bins=20, alpha=0.7, color='#ff6b6b', label='Losses', edgecolor='black')
+        ax1.hist(wins, bins=5, alpha=0.7, color='#00ff88', label='Wins', edgecolor='black')
+        ax1.hist(losses, bins=5, alpha=0.9, color='#FF0404', label='Losses', edgecolor='black')
         ax1.set_xlabel('P&L ($)', fontsize=11, color=self.text_color)
         ax1.set_ylabel('Frequency', fontsize=11, color=self.text_color)
         ax1.set_title('P&L Distribution', fontsize=14, fontweight='bold', color=self.text_color)

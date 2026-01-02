@@ -2,10 +2,9 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
-from trading_system.data.storage import StorageEngine 
-from trading_system.strategies import *
-from trading_system.backtesting.engine import BacktestEngine
+from trading_system.data.storage.market import StorageMarketData 
 from trading_system.visualization.charts import TradingVisualizer
+from trading_system.utils.dashboard import get_strategy
 
 # --- CONFIGURATION ---
 st.set_page_config(
@@ -28,23 +27,6 @@ st.markdown("""
     }
     </style>
     """, unsafe_allow_html=True)
-# get strategy 
-def get_strategy(strategy : str) -> BaseStrategy:
-    if strategy == "RSI":
-        params = {'rsi_period': 14}
-        return RsiStrategy(params)
-    elif strategy == "MACD":
-        return MACDStrategy()
-    elif strategy == "Break out":
-        return BreakoutStrategy()
-    elif strategy == "Mean Reversion":
-        return MeanReversionStrategy()
-    elif strategy == "MA Crossover":
-        return MovingAverageCrossoverStrategy()
-    elif strategy == "MACD Divergence":
-        return MACDDivergenceStrategy()
-    else:
-        return MeanReversionStrategy()
 
 # --- SIDEBAR CONTROLS ---
 with st.sidebar:
@@ -65,8 +47,8 @@ with st.sidebar:
     st.info("System Status: Online")
 
 # --- DATA LOADING ---
-storage_engine = StorageEngine()
-market_data = storage_engine.load_market_data(symbol=symbol, timeframe=timeframe, start_date=str(start_date), end_date=str(end_date))
+storage_engine = StorageMarketData()
+market_data = storage_engine.get_data(symbol=symbol, timeframe=timeframe, start_date=str(start_date), end_date=str(end_date))
 
 if market_data.empty:
     st.warning("No market data found for the selected parameters. Please fetch data first.")
@@ -89,10 +71,8 @@ else:
     # Run Backtest
     if st.sidebar.button("🚀 Run Backtest"):
         with st.spinner("Running backtest..."):
-            strategy_inst = get_strategy(strategy)
-            strategy_inst.params = params
-            backtest_engine = BacktestEngine()
-            metrics, equity_series, trades = backtest_engine.run_backtest(strategy_inst, market_data)
+            strat_class = strat_class(params)
+            metrics, equity_series, trades = strat_class.run_backtest(market_data)
             
             # Store in session state for saving later
             st.session_state['latest_backtest'] = {
@@ -131,7 +111,6 @@ else:
 
         # 3. Performance Charts 
         
-        
         st.pyplot(viz.plot_equity_curve(equity_series, title="Equity Curve"))
         st.pyplot(viz.plot_drawdown(equity_series, title="Drawdown Analysis"))
         
@@ -156,7 +135,7 @@ else:
         
         strat_list = []
         for s_name in selected_strategies:
-            strat_list.append((s_name, type(get_strategy(s_name)), {}))
+            strat_list.append((s_name, (get_strategy(s_name)), {}))
         
         with st.spinner("Comparing strategies..."):
             comparison_df = comparator.compare_strategies(strat_list)

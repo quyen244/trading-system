@@ -14,7 +14,7 @@ class MovingAverageCrossoverStrategy(BaseStrategy):
                 - ma_type: Type of MA - 'SMA' or 'EMA' (default: 'EMA')
         """
         super().__init__("MA_Crossover", params)
-        self.fast_period = self.params.get('fast_period', 10)
+        self.fast_period = self.params.get('fast_period', 5)
         self.slow_period = self.params.get('slow_period', 30)
         self.ma_type = self.params.get('ma_type', 'EMA')
 
@@ -30,7 +30,8 @@ class MovingAverageCrossoverStrategy(BaseStrategy):
         """
         data = self.validate_data(data)
         df = data.copy()
-        
+        atr_indicator = ta.volatility.AverageTrueRange(df['high'], df['low'], df['close'], window=14)
+        df['ATR_14'] = atr_indicator.average_true_range()
         # Calculate moving averages
         if self.ma_type == 'EMA':
             df['MA_fast'] = ta.trend.EMAIndicator(df['close'], window=self.fast_period).ema_indicator()
@@ -39,6 +40,7 @@ class MovingAverageCrossoverStrategy(BaseStrategy):
             df['MA_fast'] = ta.trend.SMAIndicator(df['close'], window=self.fast_period).sma_indicator()
             df['MA_slow'] = ta.trend.SMAIndicator(df['close'], window=self.slow_period).sma_indicator()
         
+        df.dropna(inplace=True)
         # Initialize signal column
         df['signal'] = 0
         

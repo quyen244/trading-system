@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
-from trading_system.data.storage import StorageEngine 
+from trading_system.data.storage.market import StorageMarketData 
 
 # --- CONFIGURATION ---
 st.set_page_config(
@@ -42,8 +42,8 @@ with st.sidebar:
     st.info("System Status: Online")
 
 # --- DATA LOADING ---
-engine = StorageEngine()
-market_data = engine.load_market_data(symbol=symbol, timeframe=timeframe, start_date=str(start_date), end_date=str(end_date))
+storage_market = StorageMarketData()
+market_data = storage_market.get_data(symbol=symbol, timeframe=timeframe, start_date=str(start_date), end_date=str(end_date))
 
 # --- MAIN PAGE LAYOUT ---
 st.title(f"📊 {symbol} Analysis Dashboard")
