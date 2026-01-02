@@ -1,0 +1,9 @@
+Strategy,Error
+Mean Reversion,index 13 is out of bounds for axis 0 with size 0
+Trend Following,index 13 is out of bounds for axis 0 with size 0
+Momentum (RSI),index 13 is out of bounds for axis 0 with size 0
+Breakout,index 13 is out of bounds for axis 0 with size 0
+MA Crossover (EMA),index 13 is out of bounds for axis 0 with size 0
+MA Crossover (SMA),index 13 is out of bounds for axis 0 with size 0
+MACD,index 13 is out of bounds for axis 0 with size 0
+MACD Divergence,index 13 is out of bounds for axis 0 with size 0

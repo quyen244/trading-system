@@ -1,0 +1,5 @@
+Metadata-Version: 2.4
+Name: trading-system
+Version: 0.1.0
+Summary: Algorithmic trading system
+Requires-Python: >=3.9
