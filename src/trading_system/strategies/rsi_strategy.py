@@ -50,3 +50,4 @@ class RsiStrategy(BaseStrategy):
         df['signal'] = df['signal'].shift(1).fillna(0)
 
         return df
+# df['ADX'] < 25 : loại bỏ trend manh 

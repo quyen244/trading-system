@@ -16,3 +16,9 @@ bayesian-optimization
 tqdm
 ta
 seaborn
+vectorbt
+torch 
+torchaudio
+torchvision
+optuna
+
