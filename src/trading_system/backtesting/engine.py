@@ -9,6 +9,14 @@ logger = logging.getLogger(__name__)
 
 class BacktestEngine:
     def __init__(self, initial_capital=10000, commission=0.001):
+
+        """
+        Initialize the backtest engine.
+        
+        Args:
+            initial_capital: The initial capital to use for the backtest.
+            commission: The commission to use for the backtest.
+        """
         self.initial_capital = initial_capital
         self.commission = commission
         self.feature_engineer = FeatureEngineer()
@@ -116,8 +124,10 @@ class BacktestEngine:
                 # Re-reading: "Binance (spot/futures)". OK, Shorting allowed.
                 
                 pass # For now, let's keep it simple: Close Long on Sell signal.
-
+    
         # Calculate Metrics
         metrics = calculate_metrics(equity_series)
         return metrics, equity_series, trades
+    def save_to_db(self, equity_series, trades):
+        self.db_url = os.getenv("TRADING_DB_URL", "")
 

@@ -26,6 +26,11 @@ class MarketData(Base):
     close = Column(Float)
     volume = Column(Float)
     timeframe = Column(String, nullable=False)
+    year = Column(Integer)
+    month = Column(Integer)
+    day = Column(Integer)
+    hour = Column(Integer)
+    minute = Column(Integer)
     
     __table_args__ = (
         PrimaryKeyConstraint('symbol', 'timestamp', 'timeframe'),
@@ -125,4 +130,9 @@ class StorageEngine:
             
         query += " ORDER BY timestamp ASC"
         
-        return pd.read_sql(query, self.engine, parse_dates=['timestamp']).set_index('timestamp')
+        try:
+            data = pd.read_sql(query, self.engine, parse_dates=['timestamp']).set_index('timestamp')
+            return data 
+        except Exception as e:
+            print(f"Error loading data: {e}")
+            return pd.DataFrame() 
