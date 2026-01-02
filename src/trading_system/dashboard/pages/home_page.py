@@ -34,7 +34,7 @@ with st.sidebar:
     
     col1, col2 = st.columns(2)
     with col1:
-        start_date = st.date_input("Start", datetime.now().date() - timedelta(days=30))
+        start_date = st.date_input("Start", datetime.now().date() - timedelta(days=14))
     with col2:
         end_date = st.date_input("End", datetime.now().date())
     
@@ -48,34 +48,45 @@ market_data = engine.load_market_data(symbol=symbol, timeframe=timeframe, start_
 # --- MAIN PAGE LAYOUT ---
 st.title(f"📊 {symbol} Analysis Dashboard")
 
-# # Top Metrics
-# m1, m2, m3, m4 = st.columns(4)
-# current_price = market_data['close'].iloc[-1]
-# price_change = current_price - market_data['close'].iloc[-2]
-# m1.metric("Current Price", f"${current_price:,.2f}", f"{price_change:,.2f}")
-# m2.metric("24h High", f"${market_data['high'].max():,.2f}")
-# m3.metric("24h Low", f"${market_data['low'].min():,.2f}")
-# m4.metric("Volume", f"{market_data['volume'].sum():,.0f}")
+# Top Metrics
+m1, m2, m3, m4 = st.columns(4)
+current_price = market_data['close'].iloc[-1]
+price_change = current_price - market_data['close'].iloc[-2]
+m1.metric("Current Price", f"${current_price:,.2f}", f"{price_change:,.2f}")
+m2.metric("24h High", f"${market_data['high'].max():,.2f}")
+m3.metric("24h Low", f"${market_data['low'].min():,.2f}")
+m4.metric("Volume", f"{market_data['volume'].sum():,.0f}")
+
+# --- SLIDER ---
+window = st.slider(
+    "Số lượng nến hiển thị",
+    min_value=50,
+    max_value=len(market_data),
+    value=200,
+    step=10
+)
+
+# Cắt data theo slider
+data = market_data.tail(window)
 
 # --- CANDLESTICK CHART ---
 fig = go.Figure(data=[go.Candlestick(
-    x=market_data.index,
-    open=market_data['open'],
-    high=market_data['high'],
-    low=market_data['low'],
-    close=market_data['close'],
-    increasing_line_color='#26a69a', # Màu xanh TradingView
-    decreasing_line_color='#ef5350', # Màu đỏ TradingView
+    x=data.index,
+    open=data['open'],
+    high=data['high'],
+    low=data['low'],
+    close=data['close'],
+    increasing_line_color='#26a69a',
+    decreasing_line_color='#ef5350',
     name="Price"
 )])
 
-# Tối ưu giao diện biểu đồ
 fig.update_layout(
     template='plotly_dark',
     plot_bgcolor='#131722',
     paper_bgcolor='#131722',
     margin=dict(l=10, r=10, t=10, b=10),
-    xaxis_rangeslider_visible=False, # Tắt thanh trượt dưới cùng cho chuyên nghiệp
+    xaxis_rangeslider_visible=False,
     yaxis=dict(gridcolor='#363a45', zeroline=False),
     xaxis=dict(gridcolor='#363a45', zeroline=False),
     height=600

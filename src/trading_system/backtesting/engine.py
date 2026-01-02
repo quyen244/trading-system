@@ -1,38 +1,35 @@
 ﻿import pandas as pd
 import numpy as np
 import logging
+from datetime import datetime
+from typing import List, Dict, Tuple, Optional
 from trading_system.risk.manager import RiskManager
 from trading_system.features.engineering import FeatureEngineer
 from trading_system.backtesting.metrics import calculate_metrics
+from trading_system.backtesting.trade import Trade
+from trading_system.data.storage import StorageEngine
 
 logger = logging.getLogger(__name__)
 
 class BacktestEngine:
-    def __init__(self, initial_capital=10000, commission=0.001):
-
+    def __init__(self, initial_capital: float = 10000, commission: float = 0.0002, slippage: float = 0.0001):
         """
         Initialize the backtest engine.
         
         Args:
             initial_capital: The initial capital to use for the backtest.
-            commission: The commission to use for the backtest.
+            commission: Trading fee (default 0.02% = 0.0002).
+            slippage: Expected slippage per trade.
         """
         self.initial_capital = initial_capital
         self.commission = commission
+        self.slippage = slippage
         self.feature_engineer = FeatureEngineer()
+        self.storage = StorageEngine()
 
-    def run_backtest(self, strategy, raw_data: pd.DataFrame):
+    def run_backtest(self, strategy, raw_data: pd.DataFrame) -> Tuple[Dict, pd.Series, List[Trade]]:
         """
         Run backtest for a given strategy and data.
-        
-        Args:
-            strategy: The strategy to run the backtest for.
-            raw_data: The raw data to run the backtest on.
-
-        Returns:
-            metrics: The metrics of the backtest.
-            equity_curve: The equity curve of the backtest.
-            trades: The trades of the backtest.
         """
         logger.info(f"Starting backtest for {strategy.name}")
         
@@ -44,90 +41,159 @@ class BacktestEngine:
         
         # 3. Simulate Execution
         risk_manager = RiskManager(self.initial_capital)
-        equity_curve = [self.initial_capital]
-        position = 0
-        entry_price = 0
-        
-        # Iterating just signals for speed (vectorized check is better but Risk Manager needs state)
-        # For simplicity and robust risk management simulation, we iterate.
-        
-        capital = self.initial_capital
+        current_capital = self.initial_capital
         equity_series = pd.Series(index=signaled_data.index, dtype='float64')
-        equity_series.iloc[0] = capital
+        equity_series.iloc[0] = current_capital
         
         trades = []
+        active_trade: Optional[Trade] = None
         
         for i in range(1, len(signaled_data)):
-            # Previous bar signal executes on Open of current bar? 
-            # OR Close of current bar signal executes on Open of next?
-            # Standard: Signal on buffer Close -> Entry on next Open.
-            
             timestamp = signaled_data.index[i]
             prev_row = signaled_data.iloc[i-1]
             curr_row = signaled_data.iloc[i]
             
-            current_price = curr_row['close']
+            close_price = curr_row['close']
+            high_price = curr_row['high']
+            low_price = curr_row['low']
+            atr = curr_row.get('ATR_14', 0)
             signal = prev_row.get('signal', 0)
             
-            # PnL Calculation for holding position
-            if position != 0:
-                # Mark to market
-                unrealized_pnl = (current_price - entry_price) * position
-                current_equity = capital + unrealized_pnl
-            else:
-                current_equity = capital
+            # 3.1 Handle Active Position (Exit Logic)
+            if active_trade:
+                exit_price = None
+                exit_reason = None
                 
-            equity_series.iloc[i] = current_equity
+                if active_trade.side == "long":
+                    # Check SL
+                    if low_price <= active_trade.stop_loss:
+                        exit_price = active_trade.stop_loss
+                        exit_reason = "Stop Loss"
+                    # Check TP
+                    elif high_price >= active_trade.take_profit:
+                        exit_price = active_trade.take_profit
+                        exit_reason = "Take Profit"
+                    # Check Exit Signal (Short signal)
+                    elif signal == -1:
+                        exit_price = close_price
+                        exit_reason = "Signal"
+                
+                elif active_trade.side == "short":
+                    # Check SL
+                    if high_price >= active_trade.stop_loss:
+                        exit_price = active_trade.stop_loss
+                        exit_reason = "Stop Loss"
+                    # Check TP
+                    elif low_price <= active_trade.take_profit:
+                        exit_price = active_trade.take_profit
+                        exit_reason = "Take Profit"
+                    # Check Exit Signal (Long signal)
+                    elif signal == 1:
+                        exit_price = close_price
+                        exit_reason = "Signal"
+                
+                if exit_price is not None:
+                    # Apply Slippage and Comission
+                    adjusted_exit = exit_price * (1 - self.slippage) if active_trade.side == "long" else exit_price * (1 + self.slippage)
+                    
+                    active_trade.exit_time = timestamp
+                    active_trade.exit_price = adjusted_exit
+                    
+                    if active_trade.side == "long":
+                        active_trade.gross_pnl = (active_trade.exit_price - active_trade.entry_price) * active_trade.position_size
+                    else:
+                        active_trade.gross_pnl = (active_trade.entry_price - active_trade.exit_price) * active_trade.position_size
+                    
+                    # Net PnL = Gross PnL - Fees (on entry and exit volume)
+                    entry_v = active_trade.entry_price * active_trade.position_size
+                    exit_v = active_trade.exit_price * active_trade.position_size
+                    fees = (entry_v + exit_v) * self.commission
+                    active_trade.net_pnl = active_trade.gross_pnl - fees
+                    
+                    current_capital += active_trade.net_pnl
+                    trades.append(active_trade)
+                    active_trade = None
+
+            # 3.2 Open New Position (Entry Logic)
+            if not active_trade and signal != 0:
+                side = "long" if signal == 1 else "short"
+                entry_price = close_price * (1 + self.slippage) if side == "long" else close_price * (1 - self.slippage)
+                
+                # Risk Rules: 1.5x ATR for SL, 3x ATR for TP
+                sl_dist = 1.5 * atr if atr > 0 else entry_price * 0.02
+                tp_dist = 3.0 * atr if atr > 0 else entry_price * 0.04
+                
+                if side == "long":
+                    stop_loss = entry_price - sl_dist
+                    take_profit = entry_price + tp_dist
+                else:
+                    stop_loss = entry_price + sl_dist
+                    take_profit = entry_price - tp_dist
+                
+                # Position Sizing (Risk 1% of capital per 1.5x ATR)
+                risk_amount = current_capital * 0.01
+                position_size = risk_amount / sl_dist if sl_dist > 0 else 0
+                
+                if position_size > 0:
+                    active_trade = Trade(
+                        symbol=signaled_data.get('symbol', 'UNKNOWN'),
+                        entry_time=timestamp,
+                        entry_price=entry_price,
+                        stop_loss=stop_loss,
+                        take_profit=take_profit,
+                        position_size=position_size,
+                        side=side
+                    )
+
+            # 3.3 Update Equity Series
+            unrealized_pnl = 0
+            if active_trade:
+                if active_trade.side == "long":
+                    unrealized_pnl = (close_price - active_trade.entry_price) * active_trade.position_size
+                else:
+                    unrealized_pnl = (active_trade.entry_price - close_price) * active_trade.position_size
+                
+                # Subtract entry fees from unrealized
+                entry_v = active_trade.entry_price * active_trade.position_size
+                unrealized_pnl -= entry_v * self.commission
             
-            # Risk Check (Stop Loss / Take Profit / Max DD)
-            if not risk_manager.check_risk_allowance(current_equity):
-                # Close Position if exists
-                if position != 0:
-                    capital = current_equity - abs(current_equity * self.commission)
-                    trades.append({'exit_time': timestamp, 'pnl': (current_price - entry_price) * position})
-                    position = 0
-                continue
+            equity_series.iloc[i] = current_capital + unrealized_pnl
 
-            # Execution Logic
-            if signal == 1 and position <= 0: # Buy Signal
-                # Close Short if any
-                if position < 0:
-                     capital += (entry_price - current_price) * abs(position) # Short PnL
-                     capital -= capital * self.commission
-                     trades.append({'exit_time': timestamp, 'pnl': (entry_price - current_price) * abs(position)})
-                     position = 0
+        # 4. Calculate Final Metrics
+        final_metrics = calculate_metrics(equity_series, trades)
+        
+        return final_metrics, equity_series, trades
 
-                # Open Long
-                # Calculate size based on risk
-                stop_loss = current_price * 0.98 # Example 2% SL
-                size = risk_manager.calculate_position_size(current_price, stop_loss)
-                cost = size * current_price
-                if cost < capital:
-                    position = size
-                    entry_price = current_price
-                    capital -= cost * self.commission
-            
-            elif signal == -1 and position >= 0: # Sell Signal
-                # Close Long if any
-                if position > 0:
-                    capital += (current_price - entry_price) * position
-                    capital -= capital * self.commission
-                    trades.append({'exit_time': timestamp, 'pnl': (current_price - entry_price) * position})
-                    position = 0
-
-                # Open Short (Optional, assuming Spot for now so only exit)
-                # If Futures, can short. Let's assume Long-Only for simplicity unless specified?
-                # User asked for "Strategies" like Trend/MeanRev, usually involves shorting. 
-                # Let's support Shorting if strategy provides it.
-                
-                # Assuming simple Long/Flat for MVP unless requested specifically.
-                # Re-reading: "Binance (spot/futures)". OK, Shorting allowed.
-                
-                pass # For now, let's keep it simple: Close Long on Sell signal.
-    
-        # Calculate Metrics
-        metrics = calculate_metrics(equity_series)
-        return metrics, equity_series, trades
-    def save_to_db(self, equity_series, trades):
-        self.db_url = os.getenv("TRADING_DB_URL", "")
+    def save_results(self, strategy_name: str, symbol: str, metrics: Dict, trades: List[Trade], equity_series: pd.Series):
+        """
+        Persist backtest results to database.
+        
+        Args:
+            strategy_name (str): Name of the strategy.
+            symbol (str): Trading symbol.
+            metrics (Dict): Backtest metrics.
+            trades (List[Trade]): List of trades.
+            equity_series (pd.Series): Equity curve.
+        """
+        backtest_data = {
+            "strategy_id": strategy_name,
+            "symbol": symbol,
+            "start_date": equity_series.index[0],
+            "end_date": equity_series.index[-1],
+            "initial_capital": self.initial_capital,
+            "total_return": metrics["total_return"],
+            "cagr": metrics["cagr"],
+            "max_drawdown": metrics["max_drawdown"],
+            "sharpe_ratio": metrics["sharpe_ratio"],
+            "sortino_ratio": metrics["sortino_ratio"],
+            "win_rate_daily": metrics["win_rate_daily"],
+            "num_trades": metrics["num_trades"]
+        }
+        
+        try:
+            bt_id = self.storage.save_backtest(backtest_data, trades)
+            return bt_id
+        except Exception as e:
+            logger.error(f"Failed to save backtest: {e}")
+            return None
 

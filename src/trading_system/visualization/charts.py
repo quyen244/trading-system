@@ -15,9 +15,14 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+import plotly.graph_objects as go
 from typing import Dict, List, Optional
 from datetime import datetime
+from trading_system.backtesting.trade import Trade
 import warnings
+from trading_system.utils.logger import setup_logger
+
+logger = setup_logger('charts')
 warnings.filterwarnings('ignore')
 
 # Set beautiful style
@@ -205,8 +210,8 @@ class TradingVisualizer:
         if not trades:
             print("No trades to plot")
             return None
-        
-        pnls = [trade['pnl'] for trade in trades]
+
+        pnls = [trade['net_pnl'] for trade in trades]
         wins = [p for p in pnls if p > 0]
         losses = [p for p in pnls if p < 0]
         
@@ -385,7 +390,86 @@ class TradingVisualizer:
         self.figures.append(fig)
         
         return fig
-    
+
+    def plot_candlestick_with_trades(
+        self,
+        df: pd.DataFrame,
+        trades: List[Trade],
+        symbol: str = "Symbol",
+        title: str = "Price Chart with Trades"
+    ):
+        """
+        Create a professional Plotly candlestick chart with trade annotations.
+        """
+        fig = go.Figure()
+
+        # Candlestick
+        fig.add_trace(go.Candlestick(
+            x=df.index,
+            open=df['open'],
+            high=df['high'],
+            low=df['low'],
+            close=df['close'],
+            name='Price'
+        ))
+
+        # Add Trades
+        for trade in trades:
+            # Entry Marker
+            fig.add_trace(go.Scatter(
+                x=[trade.entry_time],
+                y=[trade.entry_price],
+                mode='markers',
+                marker=dict(symbol='circle', size=10, color='blue' if trade.side == 'long' else 'orange'),
+                name=f"Entry ({trade.side})",
+                showlegend=False
+            ))
+            
+            # Exit Marker
+            if trade.exit_time:
+                fig.add_trace(go.Scatter(
+                    x=[trade.exit_time],
+                    y=[trade.exit_price],
+                    mode='markers',
+                    marker=dict(symbol='x', size=10, color='white'),
+                    name="Exit",
+                    showlegend=False
+                ))
+            
+            # SL/TP Lines (blurred/transparent)
+            if hasattr(trade, 'stop_loss') and trade.stop_loss:
+                # Calculate a duration to show the markers/lines
+                # For simplicity, we can just show them at entry
+                fig.add_trace(go.Scatter(
+                    x=[trade.entry_time, trade.exit_time or df.index[-1]],
+                    y=[trade.stop_loss, trade.stop_loss],
+                    mode='lines',
+                    line=dict(color='rgba(255, 0, 0, 0.3)', width=2, dash='dash'),
+                    name="Stop Loss",
+                    showlegend=False
+                ))
+            
+            if hasattr(trade, 'take_profit') and trade.take_profit:
+                fig.add_trace(go.Scatter(
+                    x=[trade.entry_time, trade.exit_time or df.index[-1]],
+                    y=[trade.take_profit, trade.take_profit],
+                    mode='lines',
+                    line=dict(color='rgba(0, 255, 0, 0.3)', width=2, dash='dash'),
+                    name="Take Profit",
+                    showlegend=False
+                ))
+
+        fig.update_layout(
+            title=title,
+            yaxis_title=f"{symbol} Price",
+            xaxis_title="Date",
+            template="plotly_dark",
+            height=700,
+            xaxis_rangeslider_visible=False
+        )
+
+        return fig
+
     def show(self):
         """Display all created figures."""
         plt.show()

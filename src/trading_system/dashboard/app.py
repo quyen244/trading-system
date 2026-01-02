@@ -3,12 +3,13 @@
 # 1. Định nghĩa các trang
 home_page = st.Page("pages/home_page.py", title="Market Dashboard", icon="📊", default=True)
 backtest_page = st.Page("pages/backtest_page.py", title="Strategy Backtest", icon="🧪")
+finetune_page = st.Page("pages/finetune_page.py", title="Strategy Finetune", icon="🎯")
 settings_page = st.Page("pages/settings_page.py", title="System Settings", icon="⚙️")
 
 # 2. Tạo Navigation với Sidebar Grouping
 pg = st.navigation({
     "MARKET ANALYSIS": [home_page],
-    "ALGO TRADING": [backtest_page],
+    "ALGO TRADING": [backtest_page, finetune_page],
     "CONFIGURATION": [settings_page]
 })
 

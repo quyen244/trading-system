@@ -3,9 +3,10 @@
 import pandas as pd
 import ta 
 from trading_system.strategies.base_strategy import BaseStrategy
+from trading_system.risk.manager import RiskManager
 
-class StrategyRsiMomentum(BaseStrategy):
-    def __init__(self, params: dict, risk_manager):
+class RsiStrategy(BaseStrategy):
+    def __init__(self, params: dict, risk_manager = RiskManager):
         super().__init__(params, risk_manager)
         self.name = "RsiMomentum_v1"
         

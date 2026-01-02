@@ -2,3 +2,6 @@ from trading_system.strategies.base_strategy import BaseStrategy
 from trading_system.strategies.trend import TrendFollowingStrategy, MomentumStrategy
 from trading_system.strategies.mean_reversion import MeanReversionStrategy
 from trading_system.strategies.breakout import BreakoutStrategy
+from trading_system.strategies.rsi_strategy import RsiStrategy
+from trading_system.strategies.macd_strategy import MACDStrategy, MACDDivergenceStrategy
+from trading_system.strategies.ma_strategy import MovingAverageCrossoverStrategy

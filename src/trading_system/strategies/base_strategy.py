@@ -32,6 +32,37 @@ class BaseStrategy(ABC):
             
         return data
 
+    def run_backtest(self, data: pd.DataFrame, initial_capital: float = 10000):
+        """
+        Run backtest and return results.
+        
+        Args:
+            data (pd.DataFrame): Input data with OHLCV and features.
+            initial_capital (float): Initial capital for backtesting.
+        
+        Returns:
+            metrics (dict): Backtest metrics.
+            equity_series (pd.Series): Equity curve.
+            trades (list): List of trades.
+        """
+        from trading_system.backtesting.engine import BacktestEngine
+        engine = BacktestEngine(initial_capital=initial_capital)
+        metrics, equity_series, trades = engine.run_backtest(self, data)
+        return metrics, equity_series, trades
+
+    def save_backtest(self, symbol: str, metrics: dict, trades: list, equity_series: pd.Series):
+        """
+        Save backtest results to database.
+        Args:
+            symbol (str): The trading symbol.
+            metrics (dict): Backtest metrics.
+            trades (list): List of trades.
+            equity_series (pd.Series): Equity curve.
+        """
+        from trading_system.backtesting.engine import BacktestEngine
+        engine = BacktestEngine()
+        return engine.save_results(self.name, symbol, metrics, trades, equity_series)
+
     def get_signal(self, row: pd.Series) -> dict:
         """
         Helper to extract signal from a specific row (latest candle).
@@ -39,6 +70,6 @@ class BaseStrategy(ABC):
         return {
             "stragegy": self.name,
             "signal": row.get('signal', 0),
-            "timestamp": row.name, # Assuming datetime index
+            "timestamp": row.name, 
             "close": row['close']
         }
