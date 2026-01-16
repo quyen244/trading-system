@@ -3,42 +3,10 @@ import torch.nn as nn
 import torch.optim as optim
 import xgboost as xgb
 import optuna
-import pandas as pd
-import numpy as np
-import joblib
-import os
-from sklearn.metrics import f1_score
 from trading_system.utils.logger import setup_logger
+from trading_system.models.gru_autoencoder import OptimizedGRU
 
-logger = setup_logger('HybridModel')
-
-class OptimizedGRU(nn.Module):
-    def __init__(self, input_dim, hidden_dim, dropout=0.2):
-        super(OptimizedGRU, self).__init__()
-        self.gru1 = nn.GRU(input_dim, hidden_dim, batch_first=True)
-        self.ln1 = nn.LayerNorm(hidden_dim)
-        self.gru2 = nn.GRU(hidden_dim, hidden_dim // 2, batch_first=True)
-        self.ln2 = nn.LayerNorm(hidden_dim // 2)
-        self.dropout = nn.Dropout(dropout)
-        self.fc = nn.Linear(hidden_dim // 2, 1) # Reconstruction head for target_return
-
-    def forward(self, x):
-        # x shape: (Batch, Window, Features)
-        out, _ = self.gru1(x)
-        out = self.ln1(out)
-        out = torch.relu(out)
-        
-        # Second GRU layer
-        out, hn = self.gru2(out)
-        
-        # Feature Extraction: Get final hidden state
-        # hn shape: (num_layers, batch, hidden_size)
-        last_hidden = hn[-1] # (Batch, Hidden//2)
-        features = self.dropout(self.ln2(last_hidden))
-        
-        # Reconstruction (prediction of target_return)
-        pred = self.fc(features)
-        return pred, features
+logger = setup_logger('HybridModelTuner')
 
 class HybridModelTuner:
     def __init__(self, X_train, y_ret_train, y_lab_train, X_val, y_ret_val, y_lab_val, device='cpu'):
@@ -156,70 +124,3 @@ class HybridModelTuner:
         self.best_xgb.fit(X_train_xgb, self.y_lab_train)
         
         return self.best_xgb
-
-class MLStrategy:
-    def __init__(self, pipeline, gru_model, xgb_model, device='cpu'):
-        self.pipeline = pipeline
-        self.gru_model = gru_model
-        self.xgb_model = xgb_model
-        self.device = device
-        
-        self.gru_model.eval()
-        self.gru_model.to(device)
-        
-    def predict(self, df_window: pd.DataFrame, threshold=0.6):
-        """Live prediction logic."""
-        try:
-            # 1. Pipeline transform
-            x_np = self.pipeline.transform_live_data(df_window)
-            x_tensor = torch.tensor(x_np, dtype=torch.float32).to(self.device)
-            
-            # 2. GRU Feature Extraction
-            with torch.no_grad():
-                _, features = self.gru_model(x_tensor)
-                features_np = features.cpu().numpy()
-            
-            # 3. XGBoost Classification
-            probs = self.xgb_model.predict_proba(features_np)[0]
-            
-            # Signal: 0=Hold, 1=Buy, 2=Sell
-            # Check Buy (1) and Sell (2)
-            if probs[1] > threshold:
-                return 1, probs[1]
-            elif probs[2] > threshold:
-                return 2, probs[2]
-            else:
-                # Use class 0 (Hold) confidence if neither buy nor sell exceeds threshold
-                return 0, probs[0]
-                
-        except Exception as e:
-            logger.error(f"Prediction error: {e}")
-            return 0, 0.0
-
-    def save_model(self, folder='models'):
-        if not os.path.exists(folder):
-            os.makedirs(folder)
-            
-        self.pipeline.save(os.path.join(folder, 'pipeline.pkl'))
-        torch.save(self.gru_model.state_dict(), os.path.join(folder, 'gru_model.pth'))
-        # Save GRU config
-        gru_config = {
-            'input_dim': self.gru_model.gru1.input_size,
-            'hidden_dim': self.gru_model.gru1.hidden_size
-        }
-        joblib.dump(gru_config, os.path.join(folder, 'gru_config.pkl'))
-        # Use joblib for XGBoost to preserve sklearn attributes (classes_, etc.)
-        joblib.dump(self.xgb_model, os.path.join(folder, 'xgb_model.pkl'))
-        logger.info(f"Strategy components saved to {folder}")
-
-    @classmethod
-    def load_model(cls, folder='models', device='cpu'):
-        pipeline = joblib.load(os.path.join(folder, 'pipeline.pkl'))
-        
-        gru_config = joblib.load(os.path.join(folder, 'gru_config.pkl'))
-        gru_model = OptimizedGRU(gru_config['input_dim'], gru_config['hidden_dim'])
-        gru_model.load_state_dict(torch.load(os.path.join(folder, 'gru_model.pth'), map_location=device))
-        
-        xgb_model = joblib.load(os.path.join(folder, 'xgb_model.pkl'))
-        
-        return cls(pipeline, gru_model, xgb_model, device)

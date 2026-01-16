@@ -9,7 +9,14 @@ from trading_system.utils.logger import setup_logger
 logger = setup_logger('DataPipeline')
 
 class CryptoDataPipeline:
-    def __init__(self, window_size=10, horizon=6, barrier_width=1.5):
+    def __init__(self, window_size=10, horizon=6, barrier_width=3):
+        """
+        Initialize the data pipeline.
+        Args:
+            window_size (int): Number of previous time steps to consider.
+            horizon (int): Number of time steps to predict.
+            barrier_width (int): Width of the triple barrier in standard deviations.
+        """
         self.window_size = window_size
         self.horizon = horizon
         self.barrier_width = barrier_width
@@ -18,7 +25,12 @@ class CryptoDataPipeline:
         self.is_fitted = False
         
     def feature_engineering(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Production feature engineering without look-ahead bias."""
+        """Production feature engineering without look-ahead bias.
+        Args:
+            df (pd.DataFrame): Input DataFrame with features.
+        Returns:
+            pd.DataFrame: DataFrame with engineered features.
+        """
         df = df.copy()
         
         # 1. Cyclical Features (Time)
@@ -72,7 +84,6 @@ class CryptoDataPipeline:
             df[f'return_lag_{lag}'] = df['close'].pct_change(lag)
 
         # 7. Target Variable (Forward Return for ML Reconstruction)
-        # Shift back by 1 so that current candle predicts NEXT return
         df['target_return'] = df['close'].pct_change(1).shift(-1)
         
         # Drop NaNs created by indicators/lags
@@ -80,7 +91,13 @@ class CryptoDataPipeline:
         return df
 
     def create_labels(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Triple Barrier Method for labeling training data."""
+        """Triple Barrier Method for labeling training data.
+        
+        Args:
+            df (pd.DataFrame): Input DataFrame with features.
+        Returns:
+            pd.DataFrame: DataFrame with engineered features.
+        """
         prices = df['close'].values
         vols = df['ATR_14'].values 
         
@@ -112,7 +129,14 @@ class CryptoDataPipeline:
         return df.iloc[:-self.horizon].copy()
 
     def prepare_train_test(self, df: pd.DataFrame, test_size=0.2):
-        """Prepare data for training/validation."""
+        """Prepare data for training/validation.
+        
+        Args:
+            df (pd.DataFrame): Input DataFrame with features.
+            test_size (float): Proportion of data to use for testing.
+        Returns:
+            tuple: Tuple of (X_train_win, y_ret_train, y_lab_train, X_test_win, y_ret_test, y_lab_test).
+        """
         df_fe = self.feature_engineering(df)
         df_labeled = self.create_labels(df_fe)
         df_labeled.dropna(inplace=True)
